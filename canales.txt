@@ -1,7 +1,2 @@
-# Lista de canales para el proxy M3U8
-# Formato: nombre_del_canal:stream_id
-# El stream_id es el parámetro que se usa en la URL de la14hd.com
-
-# Deportes
-Fox Sports:foxsports
+foxsports
 
