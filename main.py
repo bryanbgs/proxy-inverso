@@ -9,6 +9,27 @@ import aiohttp
 import re
 import os
 import time
+import sys
+from datetime import datetime
+from urllib.parse import urljoin, urlparse, parse_qs
+from aiohttp import web
+import json
+import logging
+from typing import Dict, List, Optional
+from dataclasses import dataclass
+import hashlib
+
+def s#!/usr/bin/env python3
+"""
+Proxy Inverso M3U8 para la14hd.com
+Extrae URLs M3U8 y las sirve sin restricciones de IP
+"""
+
+import asyncio
+import aiohttp
+import re
+import os
+import time
 from datetime import datetime
 from urllib.parse import urljoin, urlparse, parse_qs
 from aiohttp import web
@@ -56,25 +77,32 @@ class M3U8ProxyServer:
 
     async def initialize(self):
         """Inicializar sesiones HTTP"""
-        connector = aiohttp.TCPConnector(
-            limit=100,
-            limit_per_host=30,
-            ttl_dns_cache=300,
-            use_dns_cache=True,
-            ssl=False,
-            enable_cleanup_closed=True
-        )
-        
-        timeout = aiohttp.ClientTimeout(total=30, connect=10)
-        self.session = aiohttp.ClientSession(
-            connector=connector,
-            timeout=timeout,
-            headers=self.headers
-        )
-        
-        # Cargar canales desde archivo
-        await self.load_channels_from_file()
-        logger.info(f"Servidor inicializado con {len(self.channels)} canales")
+        try:
+            connector = aiohttp.TCPConnector(
+                limit=50,
+                limit_per_host=20,
+                ttl_dns_cache=300,
+                use_dns_cache=True,
+                ssl=False,
+                enable_cleanup_closed=True,
+                force_close=True,
+                keepalive_timeout=30
+            )
+            
+            timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=15)
+            self.session = aiohttp.ClientSession(
+                connector=connector,
+                timeout=timeout,
+                headers=self.headers,
+                raise_for_status=False
+            )
+            
+            # Cargar canales desde archivo
+            await self.load_channels_from_file()
+            logger.info(f"Servidor inicializado con {len(self.channels)} canales")
+        except Exception as e:
+            logger.error(f"Error inicializando servidor: {e}")
+            raise
 
     async def load_channels_from_file(self, filename: str = "canales.txt"):
         """Cargar lista de canales desde archivo de texto"""
@@ -124,6 +152,32 @@ class M3U8ProxyServer:
             url = f"{self.base_url}?stream={stream_id}"
             logger.info(f"Extrayendo M3U8 para {stream_id} desde {url}")
             
+            # Headers específicos para esta solicitud
+            request_headers = {
+                **self.headers,
+                'Referer': 'https://la14hd.com/',
+                'Origin': 'https://la14hd.com'
+            }
+            
+            async with self.session.get(url, headers=request_headers, ssl=False) as response:
+                if response.status != 200:
+                    logger.error(f"Error HTTP {response.status} para {stream_id}")
+                    return None
+                
+                try:
+                    content = await response.text(encoding='utf-8', errors='ignore')
+                except Exception as e:
+                    logger.error(f"Error leyendo contenido para {stream_id}: {e}")
+                    content = await response.text(errors='ignore')
+                
+                # Buscar patrones de URL M3U8 con mayor precisión
+                patterns = [
+                    r'https://[a-zA-Z0-9\-._~:/?#[\]@!    async def extract_m3u8_url(self, stream_id: str) -> Optional[str]:
+        """Extraer URL M3U8 desde la página de la14hd"""
+        try:
+            url = f"{self.base_url}?stream={stream_id}"
+            logger.info(f"Extrayendo M3U8 para {stream_id} desde {url}")
+            
             async with self.session.get(url) as response:
                 if response.status != 200:
                     logger.error(f"Error HTTP {response.status} para {stream_id}")
@@ -161,6 +215,78 @@ class M3U8ProxyServer:
                 
         except Exception as e:
             logger.error(f"Error extrayendo M3U8 para {stream_id}: {e}")
+            return None\'()*+,;=%]+\.m3u8[a-zA-Z0-9\-._~:/?#[\]@!    async def extract_m3u8_url(self, stream_id: str) -> Optional[str]:
+        """Extraer URL M3U8 desde la página de la14hd"""
+        try:
+            url = f"{self.base_url}?stream={stream_id}"
+            logger.info(f"Extrayendo M3U8 para {stream_id} desde {url}")
+            
+            async with self.session.get(url) as response:
+                if response.status != 200:
+                    logger.error(f"Error HTTP {response.status} para {stream_id}")
+                    return None
+                
+                content = await response.text()
+                
+                # Buscar patrones de URL M3U8
+                patterns = [
+                    r'https://[^"\'>\s]+\.m3u8[^"\'>\s]*',
+                    r'"(https://[^"]+\.m3u8[^"]*)"',
+                    r"'(https://[^']+\.m3u8[^']*)'",
+                    r'src="([^"]+\.m3u8[^"]*)"',
+                    r"src='([^']+\.m3u8[^']*)'",
+                    r'file:\s*["\']([^"\']+\.m3u8[^"\']*)["\']',
+                ]
+                
+                for pattern in patterns:
+                    matches = re.findall(pattern, content, re.IGNORECASE)
+                    if matches:
+                        m3u8_url = matches[0] if isinstance(matches[0], str) else matches[0][0]
+                        logger.info(f"URL M3U8 encontrada para {stream_id}: {m3u8_url}")
+                        return m3u8_url
+                
+                # Buscar en scripts JavaScript
+                js_pattern = r'(?:source|src|file|url)[\s\'"]*[:=][\s\'"]*(["\']?)([^"\'>\s]+\.m3u8[^"\'>\s]*)\1'
+                js_matches = re.findall(js_pattern, content, re.IGNORECASE)
+                if js_matches:
+                    m3u8_url = js_matches[0][1]
+                    logger.info(f"URL M3U8 encontrada en JS para {stream_id}: {m3u8_url}")
+                    return m3u8_url
+                
+                logger.warning(f"No se encontró URL M3U8 para {stream_id}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error extrayendo M3U8 para {stream_id}: {e}")
+            return None\'()*+,;=%]*',
+                    r'"(https://[^"]+\.m3u8[^"]*)"',
+                    r"'(https://[^']+\.m3u8[^']*)'",
+                    r'src\s*=\s*["\']([^"\']+\.m3u8[^"\']*)["\']',
+                    r'file\s*:\s*["\']([^"\']+\.m3u8[^"\']*)["\']',
+                    r'source\s*:\s*["\']([^"\']+\.m3u8[^"\']*)["\']',
+                    r'url\s*:\s*["\']([^"\']+\.m3u8[^"\']*)["\']'
+                ]
+                
+                for pattern in patterns:
+                    matches = re.findall(pattern, content, re.IGNORECASE | re.MULTILINE)
+                    if matches:
+                        # Tomar la primera URL válida encontrada
+                        for match in matches:
+                            m3u8_url = match if isinstance(match, str) else match[0] if match else None
+                            if m3u8_url and m3u8_url.startswith('https://'):
+                                logger.info(f"URL M3U8 encontrada para {stream_id}: {m3u8_url}")
+                                return m3u8_url
+                
+                logger.warning(f"No se encontró URL M3U8 para {stream_id}")
+                # Log de debug con parte del contenido (primeros 500 caracteres)
+                logger.debug(f"Contenido de respuesta para {stream_id}: {content[:500]}...")
+                return None
+                
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout extrayendo M3U8 para {stream_id}")
+            return None
+        except Exception as e:
+            logger.error(f"Error extrayendo M3U8 para {stream_id}: {e}")
             return None
 
     async def update_channel_url(self, stream_id: str):
@@ -195,68 +321,102 @@ class M3U8ProxyServer:
             session_key = hashlib.md5(original_url.encode()).hexdigest()[:8]
             
             if session_key not in self.proxy_sessions:
-                connector = aiohttp.TCPConnector(ssl=False)
+                connector = aiohttp.TCPConnector(
+                    ssl=False,
+                    force_close=True,
+                    enable_cleanup_closed=True,
+                    keepalive_timeout=15
+                )
                 self.proxy_sessions[session_key] = aiohttp.ClientSession(
                     connector=connector,
-                    timeout=aiohttp.ClientTimeout(total=15),
-                    headers=self.headers
+                    timeout=aiohttp.ClientTimeout(total=20, connect=10),
+                    headers={
+                        'User-Agent': self.user_agent,
+                        'Accept': 'application/vnd.apple.mpegurl, */*',
+                        'Accept-Encoding': 'gzip, deflate',
+                        'Connection': 'keep-alive'
+                    },
+                    raise_for_status=False
                 )
             
             session = self.proxy_sessions[session_key]
             
-            async with session.get(original_url) as response:
+            async with session.get(original_url, ssl=False) as response:
                 if response.status == 200:
                     content = await response.read()
                     logger.info(f"Contenido M3U8 descargado: {len(content)} bytes")
                     return content
                 else:
-                    logger.error(f"Error descargando M3U8: {response.status}")
+                    logger.error(f"Error descargando M3U8: {response.status} - {response.reason}")
                     return None
                     
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout descargando M3U8: {original_url}")
+            return None
         except Exception as e:
             logger.error(f"Error en proxy M3U8: {e}")
             return None
 
     async def handle_channel_stream(self, request):
         """Manejar solicitud de stream de canal específico"""
-        stream_id = request.match_info.get('stream_id')
-        
-        if stream_id not in self.channels:
-            return web.json_response(
-                {"error": f"Canal {stream_id} no encontrado"}, 
-                status=404
+        try:
+            stream_id = request.match_info.get('stream_id')
+            
+            if not stream_id:
+                return web.json_response(
+                    {"error": "stream_id requerido"}, 
+                    status=400
+                )
+            
+            if stream_id not in self.channels:
+                return web.json_response(
+                    {"error": f"Canal {stream_id} no encontrado"}, 
+                    status=404
+                )
+            
+            # Actualizar URL del canal
+            success = await self.update_channel_url(stream_id)
+            if not success:
+                return web.json_response(
+                    {"error": f"No se pudo obtener stream para {stream_id}"}, 
+                    status=503
+                )
+            
+            channel = self.channels[stream_id]
+            
+            if not channel.m3u8_url:
+                return web.json_response(
+                    {"error": f"URL M3U8 no disponible para {stream_id}"}, 
+                    status=503
+                )
+            
+            # Descargar contenido M3U8
+            content = await self.proxy_m3u8_content(channel.m3u8_url)
+            if not content:
+                return web.json_response(
+                    {"error": f"Error descargando stream {stream_id}"}, 
+                    status=502
+                )
+            
+            return web.Response(
+                body=content,
+                content_type='application/vnd.apple.mpegurl',
+                headers={
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type',
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                }
             )
         
-        # Actualizar URL del canal
-        success = await self.update_channel_url(stream_id)
-        if not success:
+        except Exception as e:
+            logger.error(f"Error manejando stream {stream_id}: {e}")
             return web.json_response(
-                {"error": f"No se pudo obtener stream para {stream_id}"}, 
-                status=503
+                {"error": "Error interno del servidor"}, 
+                status=500
             )
-        
-        channel = self.channels[stream_id]
-        
-        # Descargar contenido M3U8
-        content = await self.proxy_m3u8_content(channel.m3u8_url)
-        if not content:
-            return web.json_response(
-                {"error": f"Error descargando stream {stream_id}"}, 
-                status=502
-            )
-        
-        return web.Response(
-            body=content,
-            content_type='application/vnd.apple.mpegurl',
-            headers={
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type',
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache',
-                'Expires': '0'
-            }
-        )
 
     async def handle_playlist_m3u(self, request):
         """Generar playlist M3U con todos los canales"""
@@ -337,9 +497,10 @@ def create_app():
     # Rutas
     app.router.add_get('/', lambda r: web.json_response({
         "message": "Proxy M3U8 la14hd.com",
+        "version": "1.0.0",
         "endpoints": {
-            "/channels": "Lista de canales",
-            "/playlist.m3u": "Descargar playlist M3U",
+            "/channels": "Lista de canales disponibles",
+            "/playlist.m3u": "Descargar playlist M3U completa",
             "/stream/{stream_id}": "Stream de canal específico",
             "/status": "Estado del servidor"
         }
@@ -350,20 +511,46 @@ def create_app():
     app.router.add_get('/stream/{stream_id}', proxy_server.handle_channel_stream)
     app.router.add_get('/status', proxy_server.handle_status)
     
+    # Middleware para manejo de errores
+    @web.middleware
+    async def error_middleware(request, handler):
+        try:
+            return await handler(request)
+        except Exception as ex:
+            logger.error(f"Error no manejado: {ex}")
+            return web.json_response(
+                {"error": "Error interno del servidor"}, 
+                status=500
+            )
+    
     # Middleware para inicialización
+    @web.middleware
     async def init_middleware(request, handler):
         if not hasattr(app, '_initialized'):
-            await proxy_server.initialize()
-            app._initialized = True
-            app._proxy_server = proxy_server
+            try:
+                await proxy_server.initialize()
+                app._initialized = True
+                app._proxy_server = proxy_server
+                logger.info("Proxy server inicializado correctamente")
+            except Exception as e:
+                logger.error(f"Error inicializando proxy server: {e}")
+                return web.json_response(
+                    {"error": "Error inicializando servidor"}, 
+                    status=503
+                )
         return await handler(request)
     
+    app.middlewares.append(error_middleware)
     app.middlewares.append(init_middleware)
     
     # Handler de cierre
     async def cleanup_handler(app):
         if hasattr(app, '_proxy_server'):
-            await app._proxy_server.cleanup()
+            try:
+                await app._proxy_server.cleanup()
+                logger.info("Limpieza completada")
+            except Exception as e:
+                logger.error(f"Error en limpieza: {e}")
     
     app.on_cleanup.append(cleanup_handler)
     
