@@ -59,7 +59,7 @@ def extract_m3u8_url(canal):
         for script in scripts:
             if script.string and '.m3u8' in script.string:
                 # Extraer URL con regex
-                match = re.search(r'https?://[^\s\'"\]+\.m3u8[^\s\'"\]*', script.string)
+                match = re.search(r'https?://[^"\s\'\\]+\.m3u8[^"\s\'\\]*', script.string)
                 if match:
                     m3u8_url = match.group(0)
                     return m3u8_url
