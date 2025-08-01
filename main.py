@@ -19,29 +19,32 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 import hashlib
 
-def s#!/usr/bin/env python3
-"""
-Proxy Inverso M3U8 para la14hd.com
-Extrae URLs M3U8 y las sirve sin restricciones de IP
-"""
+def setup_logging():
+    """Configurar logging para el proxy"""
+    formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    
+    logger.handlers.clear()
+    logger.addHandler(console_handler)
+    
+    # Reducir logs de aiohttp
+    logging.getLogger('aiohttp.access').setLevel(logging.WARNING)
+    logging.getLogger('aiohttp.server').setLevel(logging.WARNING)
+    logging.getLogger('aiohttp.web').setLevel(logging.WARNING)
+    
+    return logger
 
-import asyncio
-import aiohttp
-import re
-import os
-import time
-from datetime import datetime
-from urllib.parse import urljoin, urlparse, parse_qs
-from aiohttp import web
-import json
-import logging
-from typing import Dict, List, Optional
-from dataclasses import dataclass
-import hashlib
-
-# Configuración de logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Configurar logging
+logger = setup_logging()
 
 @dataclass
 class ChannelInfo:
